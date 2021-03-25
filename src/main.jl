@@ -1,16 +1,36 @@
 using JuMP
 
 
-function model2latex(model::Model, var_names::Vector{String}=Vector{String}([]))
-    nb_variables = num_variables(model)
-    if isempty(var_names)
-        for i in 1:nb_variables
-            push!(var_names, "x_{$i}")
+function model2latex(model::Model)
+    all_constraints_vec = Vector{Tuple{Any, Any, Int}}()
+    for (F, S) in list_of_constraint_types(model)
+        if F == VariableRef
+            continue
+        end
+        for con in all_constraints(model, F, S)
+            push!(all_constraints_vec, (con, S, con.index.value))
         end
     end
+    sort!(all_constraints_vec, by=x->x[3])
+
+    init_all_variables_vec = all_variables(model)
+    all_variables_vec = Vector{VariableRef}()
+
+    for variable in init_all_variables_vec
+        if get(objective_function(model).terms, variable, 0.0) != 0.0
+            push!(all_variables_vec, variable)
+            continue
+        end
+        for (con, S, _) in all_constraints_vec
+            if normalized_coefficient(con, variable) != 0.0
+                push!(all_variables_vec, variable)
+                break
+            end
+        end
+    end
+    nb_variables = length(all_variables_vec)
 
     tex_str = ""
-    all_variables_vec = all_variables(model)
     tex_str *= "\\begin{equation*}\n\\begin{array}{rc"
     for _ in 1:nb_variables
         tex_str *= "c" #1 for each variable
@@ -26,8 +46,7 @@ function model2latex(model::Model, var_names::Vector{String}=Vector{String}([]))
     end
     tex_str *= "\\ z & = & "
     firstobjcoeff = true
-    for i in 1:nb_variables
-        variable = all_variables_vec[i]
+    for variable in all_variables_vec
         coeff = get(objective_function(model).terms, variable, 0.0)
         if coeff != 0
             if firstobjcoeff
@@ -35,23 +54,12 @@ function model2latex(model::Model, var_names::Vector{String}=Vector{String}([]))
             elseif coeff > 0
                 tex_str *= "+ "
             end
-            tex_str *= "$(abs(coeff) == 1 ? (coeff == -1 ? "- " : "") : (coeff == round(coeff)) ? "$(round(Int, coeff)) " : "$coeff ")$(var_names[i]) & "
+            tex_str *= "$(abs(coeff) == 1 ? (coeff == -1 ? "- " : "") : (coeff == round(coeff)) ? "$(round(Int, coeff)) " : "$coeff ")$(model[:var_names][variable]) & "
         else
             tex_str *= "& "
         end
     end
     tex_str *= "& \\\\\n"
-
-    all_constraints_vec = Vector{Tuple{Any, Any, Int}}()
-    for (F, S) in list_of_constraint_types(model)
-        if F == VariableRef
-            continue
-        end
-        for con in all_constraints(model, F, S)
-            push!(all_constraints_vec, (con, S, con.index.value))
-        end
-    end
-    sort!(all_constraints_vec, by=x->x[3])
 
     firstcst = true
     for (con, S, _) in all_constraints_vec
@@ -62,8 +70,7 @@ function model2latex(model::Model, var_names::Vector{String}=Vector{String}([]))
         end
         tex_str *= "& "
         firstobjcoeff = true
-        for i in 1:nb_variables
-            variable = all_variables_vec[i]
+        for variable in all_variables_vec
             coeff = normalized_coefficient(con, variable)
             if coeff != 0
                 if firstobjcoeff
@@ -71,7 +78,7 @@ function model2latex(model::Model, var_names::Vector{String}=Vector{String}([]))
                 elseif coeff > 0
                     tex_str *= "+ "
                 end
-                tex_str *= "$(abs(coeff) == 1 ? (coeff == -1 ? "- " : "") : (coeff == round(coeff)) ? "$(round(Int, coeff)) " : "$coeff ")$(var_names[i]) & "
+                tex_str *= "$(abs(coeff) == 1 ? (coeff == -1 ? "- " : "") : (coeff == round(coeff)) ? "$(round(Int, coeff)) " : "$coeff ")$(model[:var_names][variable]) & "
             else
                 tex_str *= "& "
             end
@@ -92,9 +99,9 @@ function model2latex(model::Model, var_names::Vector{String}=Vector{String}([]))
 
     tex_str *= "& & "
     for i in 1:(nb_variables-1)
-        tex_str *= "$(var_names[i]), & "
+        tex_str *= "$(model[:var_names][all_variables_vec[i]]), & "
     end
-    tex_str *= "$(var_names[end]) & \\geq & 0"
+    tex_str *= "$(model[:var_names][all_variables_vec[end]]) & \\geq & 0"
     tex_str *= "\n\\end{array}\n\\end{equation*}"
 
     return tex_str
@@ -181,18 +188,23 @@ function add_slack_variables!(model::Model)
     end
     sort!(all_constraints_vec, by=x->x[3])
 
+    i = 1
     for (con, S, _) in all_constraints_vec
         if S == MOI.LessThan{Float64}
             x = @variable(model, lower_bound=0.0)
+            model[:var_names][x] = "\\textcolor{blue}{e_{$i}}"
             set_normalized_coefficient(con, x, 1.0)
         elseif S == MOI.GreaterThan{Float64}
             x = @variable(model, lower_bound=0.0)
+            model[:var_names][x] = "\\textcolor{blue}{e_{$i}}"
             set_normalized_coefficient(con, x, -1.0)
         elseif S == MOI.EqualTo{Float64}
-            @variable(model, lower_bound=0.0)
+            x = @variable(model, lower_bound=0.0)
+            model[:var_names][x] = "\\textcolor{blue}{e_{$i}}"
         else
             error()
         end
+        i += 1
     end
 
     all_variables_vec = all_variables(model)
@@ -226,6 +238,7 @@ function add_artificial_variables!(model::Model)
     for i in 1:nb_constraints
         con = all_constraints_vec[i][1]
         x = @variable(model, lower_bound=0.0)
+        model[:var_names][x] = "\\textcolor{red}{v_{$i}}"
         if normalized_coefficient(con, all_variables_vec[end-nb_constraints+i]) != 1.0
             set_normalized_coefficient(con, x, 1.0)
         end
@@ -381,7 +394,7 @@ end
 
 
 
-function model2simplex(model::Model, init_var_names::Vector{String})
+function model2simplex(model::Model)
     init_all_variables_vec = all_variables(model)
     all_constraints_vec = Vector{Tuple{Any, Any, Int}}()
     for (F, S) in list_of_constraint_types(model)
@@ -410,8 +423,8 @@ function model2simplex(model::Model, init_var_names::Vector{String})
             useless_variable = false
         end
         if !useless_variable
+            push!(var_names, model[:var_names][variable])
             push!(all_variables_vec, variable)
-            push!(var_names, init_var_names[i])
         end
     end
     nb_variables = length(all_variables_vec)
@@ -607,10 +620,11 @@ end
 
 function solve_with_simplex(init_model::Model)
     model = copy(init_model)
-    var_names = Vector{String}()
+    model[:var_names] = Dict{VariableRef, String}()
     nb_variables = length(all_variables(model))
     for i in 1:nb_variables
-        push!(var_names, "x_{$i}")
+        variable = all_variables(model)[i]
+        model[:var_names][variable] = "x_{$i}"
     end
     nb_constraints = 0
     for (F, S) in list_of_constraint_types(model)
@@ -622,12 +636,12 @@ function solve_with_simplex(init_model::Model)
 
     tex_str = ""
 
-    tex_str *= model2latex(model, var_names)
+    tex_str *= model2latex(model)
 
     if objective_sense(model) == MOI.MIN_SENSE
         min2max!(model)
         tex_str *= "\n\nObjective function from \$\\min\$ to \$\\max\$\n\n"
-        tex_str *= model2latex(model, var_names)
+        tex_str *= model2latex(model)
     end
 
     rhsneg = false
@@ -645,25 +659,19 @@ function solve_with_simplex(init_model::Model)
     if rhsneg
         rhs2pos!(model)
         tex_str *= "\n\nPositive right hand sides\n\n"
-        tex_str *= model2latex(model, var_names)
+        tex_str *= model2latex(model)
     end
 
     tex_str *= "\n\nAdd slack variables\n\n"
     add_slack_variables!(model)
-    for i in 1:nb_constraints
-        push!(var_names, "\\textcolor{blue}{e_{$i}}")
-    end
-    tex_str *= model2latex(model, var_names)
+    tex_str *= model2latex(model)
 
     tex_str *= "\n\nAdd artificial variables\n\n"
     add_artificial_variables!(model)
-    for i in 1:nb_constraints
-        push!(var_names, "\\textcolor{red}{v_{$i}}")
-    end
-    tex_str *= model2latex(model, var_names)
+    tex_str *= model2latex(model)
 
     tex_str *= "\n\nModel to simplex table\n\n"
-    simplex = model2simplex(model, var_names)
+    simplex = model2simplex(model)
     tex_str *= simplex2latex(simplex)
 
     if !isempty(get_artificial_variables(simplex))
@@ -685,16 +693,16 @@ function solve_with_simplex(init_model::Model)
             end
             variable_leaving = possible_leaving_variables[1]
             constraint_i = get_constraint_for_leaving_variable(simplex, variable_leaving)
-            tex_str *= " \\quad -- \\quad Leaving variable: \$$(get_var_names(simplex)[variable_leaving])\$\n\n"
+            tex_str *= " \\quad -- \\quad Leaving variable: \$$(get_var_names(simplex)[variable_leaving])\$"
             if get_array(simplex)[constraint_i, variable_entering] != 1
-                tex_str *= "\\begin{align*}\n"
+                tex_str *= "\n\n\\begin{align*}\n"
                 tex_str *= "& L_{$(constraint_i)} \\leftarrow $(rational2tex(1//(get_array(simplex)[constraint_i, variable_entering]), in_math=true))L_{$(constraint_i)} \\\\\n"
                 tex_str *= "\\end{align*}\n\n"
                 normalize_simplex!(simplex, variable_entering, variable_leaving)
                 tex_str *= simplex2latex(simplex)
             end
 
-            tex_str *= "\\begin{align*}\n"
+            tex_str *= "\n\n\\begin{align*}\n"
             nb_constraints = get_nb_constraints(simplex)
             coeff = get_artificial_objective(simplex)[variable_entering]
             tex_str *= "& L_{c_{a}} \\leftarrow L_{c_{a}}"
@@ -740,16 +748,16 @@ function solve_with_simplex(init_model::Model)
         end
         variable_leaving = possible_leaving_variables[1]
         constraint_i = get_constraint_for_leaving_variable(simplex, variable_leaving)
-        tex_str *= " \\quad -- \\quad Leaving variable: \$$(get_var_names(simplex)[variable_leaving])\$\n\n"
+        tex_str *= " \\quad -- \\quad Leaving variable: \$$(get_var_names(simplex)[variable_leaving])\$"
         if get_array(simplex)[constraint_i, variable_entering] != 1
-            tex_str *= "\\begin{align*}\n"
+            tex_str *= "\n\n\\begin{align*}\n"
             tex_str *= "& L_{$(constraint_i)} \\leftarrow $(rational2tex(1//(get_array(simplex)[constraint_i, variable_entering]), in_math=true))L_{$(constraint_i)} \\\\\n"
             tex_str *= "\\end{align*}\n\n"
             normalize_simplex!(simplex, variable_entering, variable_leaving)
             tex_str *= simplex2latex(simplex)
         end
 
-        tex_str *= "\\begin{align*}\n"
+        tex_str *= "\n\n\\begin{align*}\n"
         nb_constraints = get_nb_constraints(simplex)
         coeff = get_objective_coefficients(simplex)[variable_entering]
         tex_str *= "& L_{c} \\leftarrow L_{c}"
