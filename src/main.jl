@@ -253,12 +253,15 @@ mutable struct RationalSimplex
     simplex_array::Matrix{Rational{Int}}
     artificial_objective::Vector{Rational{Int}}
     artificial_objective_value::Rational{Int}
-    reduce_costs::Vector{Rational{Int}}
+    reduced_costs::Vector{Rational{Int}}
     dual_costs::Vector{Rational{Int}}
     objective_value::Rational{Int}
     basis_variables::Vector{Int}
+    init_variables::Vector{Int}
+    slack_variables::Vector{Int}
     artificial_variables::Vector{Int}
     variable_names::Vector{String}
+    is_solved::Bool
 end
 
 function get_nb_constraints(simplex::RationalSimplex)
@@ -287,11 +290,11 @@ function get_var_names(simplex::RationalSimplex)
 end
 
 function get_objective_coefficients(simplex::RationalSimplex)
-    return simplex.reduce_costs
+    return simplex.reduced_costs
 end
 
 function set_objective_coefficient_value!(simplex::RationalSimplex, i::Int, value::Rational{Int})
-    simplex.reduce_costs[i] = value
+    simplex.reduced_costs[i] = value
     return simplex
 end
 
@@ -342,6 +345,19 @@ end
 
 function set_artificial_objective_value!(simplex::RationalSimplex, value::Rational{Int})
     simplex.artificial_objective_value = value
+    return simplex
+end
+
+function get_init_variables(simplex::RationalSimplex)
+    return simplex.init_variables
+end
+
+function is_solved(simplex::RationalSimplex)
+    return simplex.is_solved
+end
+
+function solved!(simplex::RationalSimplex)
+    simplex.is_solved = true
     return simplex
 end
 
@@ -430,6 +446,8 @@ function model2simplex(model::Model)
     nb_variables = length(all_variables_vec)
 
     basis_variables = Vector{Int}()
+    init_variables = Vector{Int}(1:(nb_variables-2*nb_constraints))
+    slack_variables = Vector{Int}((nb_variables-2*nb_constraints+1):(nb_variables-nb_constraints))
     artificial_variables = Vector{Int}()
 
     for i in 1:nb_constraints
@@ -454,8 +472,11 @@ function model2simplex(model::Model)
         Vector{Rational{Int}}([normalized_rhs(con) for (con, S, _) in all_constraints_vec]),
         rationalize(-objective_function(model).constant),
         basis_variables,
+        init_variables,
+        slack_variables,
         artificial_variables,
-        var_names
+        var_names,
+        false
     )
 
     for i in 1:nb_constraints
@@ -606,7 +627,7 @@ function remove_artificials!(simplex::RationalSimplex)
         end
     end
 
-    simplex.reduce_costs = simplex.reduce_costs[1:(end-length(artificial_variables))]
+    simplex.reduced_costs = simplex.reduced_costs[1:(end-length(artificial_variables))]
     simplex.variable_names = simplex.variable_names[1:(end-length(artificial_variables))]
     simplex.simplex_array = simplex.simplex_array[1:end, 1:(end-length(artificial_variables))]
     simplex.artificial_variables = Vector{Int}()
@@ -618,7 +639,7 @@ end
 
 
 
-function solve_with_simplex(init_model::Model)
+function solve_with_simplex(init_model::Model, filename::String)
     model = copy(init_model)
     model[:var_names] = Dict{VariableRef, String}()
     nb_variables = length(all_variables(model))
@@ -635,6 +656,8 @@ function solve_with_simplex(init_model::Model)
     end
 
     tex_str = ""
+    tex_str *= "\n\\section*{Solving model with simplex}\n"
+    tex_str *= "\n\\subsection*{Rewriting model}\n"
 
     tex_str *= model2latex(model)
 
@@ -674,8 +697,10 @@ function solve_with_simplex(init_model::Model)
     simplex = model2simplex(model)
     tex_str *= simplex2latex(simplex)
 
+    tex_str *= "\n\n\\subsection*{Solving}\n"
+
     if !isempty(get_artificial_variables(simplex))
-        tex_str *= "\n\nRepair simplex table\n\n"
+        tex_str *= "\nRepair simplex table\n\n"
         repair_simplex!(simplex)
         tex_str *= simplex2latex(simplex)
 
@@ -686,10 +711,16 @@ function solve_with_simplex(init_model::Model)
             possible_leaving_variables = find_leaving_variable_candidates(simplex, variable_entering)
             if isempty(possible_leaving_variables)
                 tex_str *= "\n\nNo leaving variable."
-                return tex_str
+                open(filename, "a") do f
+                    write(f, tex_str)
+                end
+                return simplex
             elseif length(possible_leaving_variables) >= 2
                 tex_str *= "\n\nMultiple possible leaving variables. Not handled yet."
-                return tex_str
+                open(filename, "a") do f
+                    write(f, tex_str)
+                end
+                return simplex
             end
             variable_leaving = possible_leaving_variables[1]
             constraint_i = get_constraint_for_leaving_variable(simplex, variable_leaving)
@@ -740,7 +771,10 @@ function solve_with_simplex(init_model::Model)
         possible_leaving_variables = find_leaving_variable_candidates(simplex, variable_entering)
         if isempty(possible_leaving_variables)
             tex_str *= "\n\nNo leaving variable."
-            return tex_str
+            open(filename, "a") do f
+                write(f, tex_str)
+            end
+            return simplex
         elseif length(possible_leaving_variables) >= 2
             tex_str *= "\n\nMultiple possible leaving variables -- Uses Bland's rule.\n\n"
             tex_str *= "Entering variable: \$$(get_var_names(simplex)[variable_entering])\$"
@@ -778,9 +812,96 @@ function solve_with_simplex(init_model::Model)
         tex_str *= simplex2latex(simplex)
     end
 
+    open(filename, "a") do f
+        write(f, tex_str)
+    end
+
+    solved!(simplex)
+
+    return simplex
+end
+
+
+mutable struct SensitivityIntervalVariables
+    variable_names::Vector{String}
+    reduced_costs::Vector{Rational{Int}}
+    intervals::Vector{Tuple{Union{Nothing, Rational{Int}, Float64}, Union{Nothing, Rational{Int}, Float64}}}
+end
+
+function get_var_names(sensitivity_variables::SensitivityIntervalVariables)
+    return sensitivity_variables.variable_names
+end
+
+function get_reduced_costs(sensitivity_variables::SensitivityIntervalVariables)
+    return sensitivity_variables.reduced_costs
+end
+
+function get_var_name(sensitivity_variables::SensitivityIntervalVariables, var_indice::Int)
+    return sensitivity_variables.variable_names[var_indice]
+end
+
+function get_reduced_cost(sensitivity_variables::SensitivityIntervalVariables, var_indice::Int)
+    return sensitivity_variables.reduced_costs[var_indice]
+end
+
+function get_intervals(sensitivity_variables::SensitivityIntervalVariables)
+    return sensitivity_variables.intervals
+end
+
+function get_interval(sensitivity_variables::SensitivityIntervalVariables, var_indice::Int)
+    return sensitivity_variables.intervals[var_indice]
+end
+
+function get_nb_variables(sensitivity_variables::SensitivityIntervalVariables)
+    return length(sensitivity_variables.reduced_costs)
+end
+
+function rational2tex(x::Float64; in_math=false)
+    @assert abs(x) == Inf
+    return "$(!in_math ? "\$" : "")$(x == Inf ? "" : "-")\\infty$(!in_math ? "\$" : "")"
+end
+
+function rational2tex(x::Nothing; in_math=false)
+    return "$(!in_math ? "\$" : "")-$(!in_math ? "\$" : "")"
+end
+
+function sensitivity2latex(sensitivity_variables::SensitivityIntervalVariables)
+    tex_str = ""
+    nb_variables = get_nb_variables(sensitivity_variables)
+    tex_str *= "\\begin{center}\n\\begin{tabular}{|c|cccc|}\\hline\n"
+    tex_str *= "Variable & Reduced cost & Min & Current value & Max \\\\\n\\hline\n"
+    for i in 1:nb_variables
+        tex_str *= "$(get_var_name(sensitivity_variables, i)) & $(rational2tex(get_interval(sensitivity_variables, i)[1])) & $(rational2tex(get_reduced_cost(sensitivity_variables, i))) & $(rational2tex(get_interval(sensitivity_variables, i)[2])) \\\\\n"
+    end
+    tex_str *= "\\hline\n\\end{tabular}\n\\end{center}"
     return tex_str
 end
 
+function sensitivity_analysis(simplex::RationalSimplex, filename::String)
+    tex_str = ""
+    tex_str *= "\n\\section*{Sensitivity analysis}"
+    tex_str *= "\n\\subsection*{Computing sensitivity of c_i}\n"
+
+    tex_str *= "Sensitivity intervals for the variables:"
+
+    init_variables = get_init_variables(simplex)
+    nb_variables = length(init_variables)
+
+    reduced_costs = get_objective_coefficients(simplex)[1:nb_variables]
+    variable_names = get_var_names(simplex)[1:nb_variables]
+    sen_intervals = Vector{Tuple{Union{Nothing, Int, Float64}, Union{Nothing, Int, Float64}}}(undef, nb_variables)
+    for i in 1:nb_variables
+        intervals[i] = (nothing, nothing)
+    end
+    sensitivity_variables = SensitivityIntervalVariables(
+        reduced_costs,
+        variable_names,
+        sen_intervals
+    )
+
+
+
+end
 
 
 
@@ -794,6 +915,18 @@ function main()
     @constraint(model, -x_1 - x_2 >= -6)
     @constraint(model, 2x_1 >= 4)
 
-    println(solve_with_simplex(model))
+    open(filename, "w") do f
+        write(f, header)
+    end
+
+    simplex = solve_with_simplex(model, filename)
+    if is_solved(simplex)
+        sensitivity_analysis(simplex, filename)
+    end
+
+    open(filename, "a") do f
+        write(f, footer)
+    end
+
     return nothing
 end
