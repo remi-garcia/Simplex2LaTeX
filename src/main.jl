@@ -768,9 +768,9 @@ function solve_with_simplex(init_model::Model, filename::String)
             constraint_i = get_constraint_for_leaving_variable(simplex, variable_leaving)
             tex_str *= " \\quad -- \\quad Leaving variable: \$$(get_var_names(simplex)[variable_leaving])\$"
             if get_array(simplex)[constraint_i, variable_entering] != 1
-                tex_str *= "\n\n\\begin{align*}\n"
-                tex_str *= "& L_{$(constraint_i)} \\leftarrow $(rational2tex(1//(get_array(simplex)[constraint_i, variable_entering]), in_math=true))L_{$(constraint_i)} \\\\\n"
-                tex_str *= "\\end{align*}\n\n"
+                tex_str *= "\n\n\\begin{equation*}\n"
+                tex_str *= "L_{$(constraint_i)} \\leftarrow $(rational2tex(1//(get_array(simplex)[constraint_i, variable_entering]), in_math=true))L_{$(constraint_i)} \n"
+                tex_str *= "\\end{equation*}\n\n"
                 normalize_simplex!(simplex, variable_entering, variable_leaving)
                 tex_str *= simplex2latex(simplex)
             end
@@ -826,9 +826,9 @@ function solve_with_simplex(init_model::Model, filename::String)
         constraint_i = get_constraint_for_leaving_variable(simplex, variable_leaving)
         tex_str *= " \\quad -- \\quad Leaving variable: \$$(get_var_names(simplex)[variable_leaving])\$"
         if get_array(simplex)[constraint_i, variable_entering] != 1
-            tex_str *= "\n\n\\begin{align*}\n"
-            tex_str *= "& L_{$(constraint_i)} \\leftarrow $(rational2tex(1//(get_array(simplex)[constraint_i, variable_entering]), in_math=true))L_{$(constraint_i)} \\\\\n"
-            tex_str *= "\\end{align*}\n\n"
+            tex_str *= "\n\n\\begin{equation*}\n"
+            tex_str *= "L_{$(constraint_i)} \\leftarrow $(rational2tex(1//(get_array(simplex)[constraint_i, variable_entering]), in_math=true))L_{$(constraint_i)} \n"
+            tex_str *= "\\end{equation*}\n\n"
             normalize_simplex!(simplex, variable_entering, variable_leaving)
             tex_str *= simplex2latex(simplex)
         end
