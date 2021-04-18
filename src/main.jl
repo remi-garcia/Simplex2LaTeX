@@ -1,6 +1,5 @@
 using JuMP
 
-
 function model2latex(model::Model)
     all_constraints_vec = Vector{Tuple{Any, Any, Int}}()
     for (F, S) in list_of_constraint_types(model)
@@ -255,6 +254,7 @@ mutable struct RationalSimplex
     artificial_objective_value::Rational{Int}
     initial_objective_coefficients::Vector{Rational{Int}}
     reduced_and_dual_costs::Vector{Rational{Int}}
+    initial_rhs::Vector{Rational{Int}}
     rhs::Vector{Rational{Int}}
     objective_value::Rational{Int}
     basis_variables::Vector{Int}
@@ -306,6 +306,13 @@ function get_initial_objective_coefficient(simplex::RationalSimplex, i::Int)
     return simplex.initial_objective_coefficients[i]
 end
 
+function get_initial_rhs_coefficients(simplex::RationalSimplex)
+    return simplex.initial_rhs
+end
+
+function get_initial_rhs_coefficient(simplex::RationalSimplex, i::Int)
+    return simplex.initial_rhs[i]
+end
 
 function set_objective_coefficient_value!(simplex::RationalSimplex, i::Int, value::Rational{Int})
     simplex.reduced_and_dual_costs[i] = value
@@ -316,8 +323,12 @@ function get_artificial_objective(simplex::RationalSimplex)
     return simplex.artificial_objective
 end
 
-function get_rhs(simplex::RationalSimplex)
+function get_rhs_coefficients(simplex::RationalSimplex)
     return simplex.rhs
+end
+
+function get_rhs_coefficient(simplex::RationalSimplex, i::Int)
+    return simplex.rhs[i]
 end
 
 function set_rhs_value!(simplex::RationalSimplex, i::Int, value::Rational{Int})
@@ -412,7 +423,7 @@ function simplex2latex(simplex::RationalSimplex)
         for j in 1:nb_variables
             tex_str *= "$(rational2tex(get_array(simplex)[i,j])) & "
         end
-        tex_str *= "$(rational2tex(get_rhs(simplex)[i])) \\\\\n"
+        tex_str *= "$(rational2tex(get_rhs_coefficient(simplex, i))) \\\\\n"
     end
 
     tex_str *= "\\end{tabular}\n\\end{center}"
@@ -492,6 +503,7 @@ function model2simplex(model::Model)
         Vector{Rational{Int}}([rationalize(get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
         Vector{Rational{Int}}([rationalize(get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
         Vector{Rational{Int}}([normalized_rhs(con) for (con, S, _) in all_constraints_vec]),
+        Vector{Rational{Int}}([normalized_rhs(con) for (con, S, _) in all_constraints_vec]),
         rationalize(-objective_function(model).constant),
         basis_variables,
         init_variables,
@@ -524,7 +536,7 @@ function repair_simplex!(simplex::RationalSimplex)
             for j in 1:nb_variables
                 set_artificial_objective_coefficient!(simplex, j, get_artificial_objective_coefficient(simplex, j) - get_array(simplex)[i,j])
             end
-            set_artificial_objective_value!(simplex, get_artificial_objective_value(simplex) - get_rhs(simplex)[i])
+            set_artificial_objective_value!(simplex, get_artificial_objective_value(simplex) - get_rhs_coefficient(simplex, i))
         end
     end
 
@@ -561,12 +573,12 @@ function find_leaving_variable_candidates(simplex::RationalSimplex, variable_ent
         if get_array(simplex)[i, variable_entering] <= 0
             continue
         end
-        if get_rhs(simplex)[i]//get_array(simplex)[i, variable_entering] <= minimum_value
-            if get_rhs(simplex)[i]//get_array(simplex)[i, variable_entering] != minimum_value
+        if get_rhs_coefficient(simplex, i)//get_array(simplex)[i, variable_entering] <= minimum_value
+            if get_rhs_coefficient(simplex, i)//get_array(simplex)[i, variable_entering] != minimum_value
                 possible_leaving_variables = Vector{Int}()
             end
             push!(possible_leaving_variables, get_basis_variables(simplex)[i])
-            minimum_value = get_rhs(simplex)[i]//get_array(simplex)[i, variable_entering]
+            minimum_value = get_rhs_coefficient(simplex, i)//get_array(simplex)[i, variable_entering]
         end
     end
 
@@ -600,7 +612,7 @@ function normalize_simplex!(simplex::RationalSimplex, variable_entering::Int, va
     for j in 1:nb_variables
         set_coefficient_array!(simplex, i, j, get_array(simplex)[i, j]//coeff)
     end
-    set_rhs_value!(simplex, i, get_rhs(simplex)[i]//coeff)
+    set_rhs_value!(simplex, i, get_rhs_coefficient(simplex, i)//coeff)
 
     return simplex
 end
@@ -614,7 +626,7 @@ function artificial_pivot!(simplex::RationalSimplex, variable_entering::Int, var
     for j in 1:nb_variables
         set_artificial_objective_coefficient!(simplex, j, get_artificial_objective_coefficient(simplex, j) - coeff*get_array(simplex)[constraint_i,j])
     end
-    set_artificial_objective_value!(simplex, get_artificial_objective_value(simplex) - coeff*get_rhs(simplex)[constraint_i])
+    set_artificial_objective_value!(simplex, get_artificial_objective_value(simplex) - coeff*get_rhs_coefficient(simplex, constraint_i))
 
     simplex_pivot!(simplex, variable_entering, variable_leaving)
 
@@ -629,7 +641,7 @@ function simplex_pivot!(simplex::RationalSimplex, variable_entering::Int, variab
     for j in 1:nb_variables
         set_objective_coefficient_value!(simplex, j, get_objective_coefficient(simplex, j) - coeff*get_array(simplex)[constraint_i,j])
     end
-    set_objective_value!(simplex, get_objective_value(simplex) - coeff*get_rhs(simplex)[constraint_i])
+    set_objective_value!(simplex, get_objective_value(simplex) - coeff*get_rhs_coefficient(simplex, constraint_i))
 
     nb_constraints = get_nb_constraints(simplex)
     for i in 1:nb_constraints
@@ -638,7 +650,7 @@ function simplex_pivot!(simplex::RationalSimplex, variable_entering::Int, variab
             for j in 1:nb_variables
                 set_coefficient_array!(simplex, i, j, get_array(simplex)[i,j] - coeff*get_array(simplex)[constraint_i,j])
             end
-            set_rhs_value!(simplex, i, get_rhs(simplex)[i] - coeff*get_rhs(simplex)[constraint_i])
+            set_rhs_value!(simplex, i, get_rhs_coefficient(simplex, i) - coeff*get_rhs_coefficient(simplex, constraint_i))
         end
     end
 
@@ -686,7 +698,7 @@ function solve_with_simplex(init_model::Model, filename::String)
     end
 
     tex_str = ""
-    tex_str *= "\n\\section*{Solving model with simplex}\n"
+    tex_str *= "\n\n\\section*{Solving model with simplex}\n"
     tex_str *= "\n\\subsection*{Rewriting model}\n"
 
     tex_str *= model2latex(model)
@@ -855,7 +867,16 @@ end
 mutable struct SensitivityIntervalVariables
     variable_names::Vector{String}
     reduced_costs::Vector{Rational{Int}}
+    initial_objective_coefficients::Vector{Rational{Int}}
     intervals::Vector{Tuple{Union{Nothing, Rational{Int}, Float64}, Union{Nothing, Rational{Int}, Float64}}}
+end
+
+function get_initial_objective_coefficients(sensitivity_variables::SensitivityIntervalVariables)
+    return sensitivity_variables.initial_objective_coefficients
+end
+
+function get_initial_objective_coefficient(sensitivity_variables::SensitivityIntervalVariables, i::Int)
+    return sensitivity_variables.initial_objective_coefficients[i]
 end
 
 function get_var_names(sensitivity_variables::SensitivityIntervalVariables)
@@ -888,8 +909,49 @@ function set_interval!(sensitivity_variables::SensitivityIntervalVariables, var_
 end
 
 function get_nb_variables(sensitivity_variables::SensitivityIntervalVariables)
-    return length(sensitivity_variables.reduced_costs)
+    return length(sensitivity_variables.initial_objective_coefficients)
 end
+
+
+mutable struct SensitivityIntervalConstraints
+    dual_costs::Vector{Rational{Int}}
+    initial_rhs_coefficients::Vector{Rational{Int}}
+    intervals::Vector{Tuple{Union{Nothing, Rational{Int}, Float64}, Union{Nothing, Rational{Int}, Float64}}}
+end
+
+function get_initial_rhs_coefficients(sensitivity_constraints::SensitivityIntervalConstraints)
+    return sensitivity_constraints.initial_rhs_coefficients
+end
+
+function get_initial_rhs_coefficient(sensitivity_constraints::SensitivityIntervalConstraints, i::Int)
+    return sensitivity_constraints.initial_rhs_coefficients[i]
+end
+
+function get_dual_costs(sensitivity_constraints::SensitivityIntervalConstraints)
+    return sensitivity_constraints.dual_costs
+end
+
+function get_dual_cost(sensitivity_constraints::SensitivityIntervalConstraints, const_indice::Int)
+    return sensitivity_constraints.dual_costs[const_indice]
+end
+
+function get_intervals(sensitivity_constraints::SensitivityIntervalConstraints)
+    return sensitivity_constraints.intervals
+end
+
+function get_interval(sensitivity_constraints::SensitivityIntervalConstraints, const_indice::Int)
+    return sensitivity_constraints.intervals[const_indice]
+end
+
+function set_interval!(sensitivity_constraints::SensitivityIntervalConstraints, const_indice::Int, interval::Tuple{Union{Rational{Int}, Float64}, Union{Rational{Int}, Float64}})
+    sensitivity_constraints.intervals[const_indice] = interval
+    return sensitivity_constraints
+end
+
+function get_nb_constraints(sensitivity_constraints::SensitivityIntervalConstraints)
+    return length(sensitivity_constraints.dual_costs)
+end
+
 
 function rational2tex(x::Float64; in_math=false)
     @assert abs(x) == Inf
@@ -900,13 +962,26 @@ function rational2tex(x::Nothing; in_math=false)
     return "$(!in_math ? "\$" : "")-$(!in_math ? "\$" : "")"
 end
 
-function sensitivity2latex(sensitivity_variables::SensitivityIntervalVariables, simplex::RationalSimplex)
+function sensitivity2latex(sensitivity_variables::SensitivityIntervalVariables)
     tex_str = ""
     nb_variables = get_nb_variables(sensitivity_variables)
     tex_str *= "\\begin{center}\n\\begin{tabular}{|c|cccc|}\\hline\n"
     tex_str *= "Variable & Reduced cost & Min & Current objective value & Max \\\\\n\\hline\n"
     for i in 1:nb_variables
-        tex_str *= "\$$(get_var_name(sensitivity_variables, i))\$ & $(rational2tex(get_reduced_cost(sensitivity_variables, i))) & $(rational2tex(get_interval(sensitivity_variables, i)[1])) & $(rational2tex(get_initial_objective_coefficient(simplex, i))) & $(rational2tex(get_interval(sensitivity_variables, i)[2])) \\\\\n"
+        tex_str *= "\$$(get_var_name(sensitivity_variables, i))\$ & $(rational2tex(get_reduced_cost(sensitivity_variables, i))) & $(rational2tex(get_interval(sensitivity_variables, i)[1])) & $(rational2tex(get_initial_objective_coefficient(sensitivity_variables, i))) & $(rational2tex(get_interval(sensitivity_variables, i)[2])) \\\\\n"
+    end
+    tex_str *= "\\hline\n\\end{tabular}\n\\end{center}\n\n"
+    return tex_str
+end
+
+
+function sensitivity2latex(sensitivity_constraints::SensitivityIntervalConstraints)
+    tex_str = ""
+    nb_constraints = get_nb_constraints(sensitivity_constraints)
+    tex_str *= "\\begin{center}\n\\begin{tabular}{|c|cccc|}\\hline\n"
+    tex_str *= "Constraint & Dual cost & Min & Current rhs value & Max \\\\\n\\hline\n"
+    for j in 1:nb_constraints
+        tex_str *= "\$\\left($(j)\\right)\$ & $(rational2tex(get_dual_cost(sensitivity_constraints, j))) & $(rational2tex(get_interval(sensitivity_constraints, j)[1])) & $(rational2tex(get_initial_rhs_coefficient(sensitivity_constraints, j))) & $(rational2tex(get_interval(sensitivity_constraints, j)[2])) \\\\\n"
     end
     tex_str *= "\\hline\n\\end{tabular}\n\\end{center}\n\n"
     return tex_str
@@ -916,7 +991,7 @@ end
 
 function sensitivity_analysis(simplex::RationalSimplex, filename::String)
     tex_str = ""
-    tex_str *= "\n\\section*{Sensitivity analysis}"
+    tex_str *= "\n\n\n\\section*{Sensitivity analysis}"
     tex_str *= "\n\\subsection*{Computing sensitivity of \$c_i\$}\n"
 
     tex_str *= "Sensitivity intervals for the variables:\n"
@@ -932,9 +1007,10 @@ function sensitivity_analysis(simplex::RationalSimplex, filename::String)
     sensitivity_variables = SensitivityIntervalVariables(
         variable_names,
         reduced_costs,
+        get_initial_objective_coefficients(simplex)[1:nb_variables],
         sen_intervals
     )
-    tex_str *= sensitivity2latex(sensitivity_variables, simplex)
+    tex_str *= sensitivity2latex(sensitivity_variables)
 
     total_nb_variables = length(get_objective_coefficients(simplex))
 
@@ -981,34 +1057,85 @@ function sensitivity_analysis(simplex::RationalSimplex, filename::String)
             tex_str *= "\n\\end{align*}\n"
         else
             delta_has_upper_bound = true
-            delta_upper_bound = -get_objective_coefficient(simplex, i)
+            delta_upper_bound = -get_reduced_cost(sensitivity_variables, i)
             tex_str *= "\n\\begin{equation*}\n"
-            tex_str *= "$(rational2tex(get_objective_coefficient(simplex, i), in_math=true)) + \\Delta \\leq 0"
+            tex_str *= "$(rational2tex(get_reduced_cost(sensitivity_variables, i), in_math=true)) + \\Delta_{$(var_name)} \\leq 0"
             tex_str *= "\n\\end{equation*}\n"
         end
         tex_str *= "Thus \$\\Delta_{$(var_name)} \\in \\left[$(rational2tex(delta_has_lower_bound ? delta_lower_bound : -Inf, in_math=true)), $(rational2tex(delta_has_upper_bound ? delta_upper_bound : Inf, in_math=true))\\right]\$\n\n"
-        set_interval!(sensitivity_variables, i, (delta_has_lower_bound ? delta_lower_bound+get_initial_objective_coefficient(simplex, i) : -Inf, delta_has_upper_bound ? delta_upper_bound+get_initial_objective_coefficient(simplex, i) : Inf))
-        tex_str *= sensitivity2latex(sensitivity_variables, simplex)
+        set_interval!(sensitivity_variables, i, (delta_has_lower_bound ? delta_lower_bound+get_initial_objective_coefficient(sensitivity_variables, i) : -Inf, delta_has_upper_bound ? delta_upper_bound+get_initial_objective_coefficient(sensitivity_variables, i) : Inf))
+        tex_str *= sensitivity2latex(sensitivity_variables)
     end
+
+    tex_str *= "\n\\subsection*{Computing sensitivity of \$b_j\$}\n"
+
+    tex_str *= "Sensitivity intervals for the constraints:\n"
+    initial_rhs = get_initial_rhs_coefficients(simplex)
+    nb_constraints = length(initial_rhs)
+    dual_costs = -get_objective_coefficients(simplex)[(nb_variables+1):(nb_variables+nb_constraints)]
+    sen_intervals = Vector{Tuple{Union{Nothing, Int, Float64}, Union{Nothing, Int, Float64}}}(undef, nb_constraints)
+    for j in 1:nb_constraints
+        sen_intervals[j] = (nothing, nothing)
+    end
+    sensitivity_constraints = SensitivityIntervalConstraints(
+        dual_costs,
+        initial_rhs,
+        sen_intervals
+    )
+    tex_str *= sensitivity2latex(sensitivity_constraints)
+
+    for j in 1:nb_constraints
+        tex_str *= "Compute sensitivity interval for constraint \$\\left($j\\right)\$\n"
+        delta_has_lower_bound = false
+        delta_has_upper_bound = false
+        delta_lower_bound = 0//1
+        delta_upper_bound = 0//1
+        first_eq_done = false
+        tex_str *= "\\begin{align*}\n"
+        for k in 1:nb_constraints
+            var_a = get_array(simplex)[k, nb_variables+j]
+            if var_a != 0
+                if first_eq_done
+                    tex_str *= " \\\\\n"
+                else
+                    first_eq_done = true
+                end
+                var_b = get_rhs_coefficient(simplex, k)
+                tex_str *= "& $(rational2tex(var_b, in_math=true)) $(var_a < 0 ? "+" : "-") $(abs(var_a) != 1 ? rational2tex(abs(var_a), in_math=true) : "") \\Delta_{\\left($(j)\\right)} \\geq 0"
+                if var_a < 0
+                    if delta_has_lower_bound
+                        delta_lower_bound = max(delta_lower_bound, -var_b//abs(var_a))
+                    else
+                        delta_lower_bound = -var_b//abs(var_a)
+                        delta_has_lower_bound = true
+                    end
+                else
+                    if delta_has_upper_bound
+                        delta_upper_bound = min(delta_upper_bound, var_b//abs(var_a))
+                    else
+                        delta_upper_bound = var_b//abs(var_a)
+                        delta_has_upper_bound = true
+                    end
+                end
+            end
+        end
+        tex_str *= "\n\\end{align*}\n"
+        tex_str *= "Thus \$\\Delta_{\\left($(j)\\right)} \\in \\left[$(rational2tex(delta_has_lower_bound ? delta_lower_bound : -Inf, in_math=true)), $(rational2tex(delta_has_upper_bound ? delta_upper_bound : Inf, in_math=true))\\right]\$\n\n"
+        set_interval!(sensitivity_constraints, j, (delta_has_lower_bound ? delta_lower_bound+get_initial_rhs_coefficient(sensitivity_constraints, j) : -Inf, delta_has_upper_bound ? delta_upper_bound+get_initial_rhs_coefficient(sensitivity_constraints, j) : Inf))
+        tex_str *= sensitivity2latex(sensitivity_constraints)
+    end
+
+
     open(filename, "a") do f
         write(f, tex_str)
     end
-    return sensitivity_variables
+    return sensitivity_variables, sensitivity_constraints
 end
 
 
 
 
-function main()
-    model = Model()
-    @variable(model, x_1 >= 0)
-    @variable(model, x_2 >= 0)
-    @objective(model, Min, -2x_1 - x_2)
-    @constraint(model, x_1 - x_2 >= -2)
-    @constraint(model, -x_1 - x_2 >= -6)
-    @constraint(model, 2x_1 >= 4)
-
-    filename = "test.tex"
+function main(model::Model, filename::String)
     open(filename, "w") do f
         write(f, """
         \\documentclass[11pt]{article}
@@ -1019,6 +1146,7 @@ function main()
         \\usepackage{xspace}
         \\usepackage{booktabs}
         \\usepackage{array}
+        \\setlength\\parindent{0pt}
 
         \\begin{document}
         """)
