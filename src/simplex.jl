@@ -2,14 +2,14 @@ using JuMP
 
 
 mutable struct RationalSimplex
-    simplex_array::Matrix{Rational{Int}}
-    artificial_objective::Vector{Rational{Int}}
-    artificial_objective_value::Rational{Int}
-    initial_objective_coefficients::Vector{Rational{Int}}
-    reduced_and_dual_costs::Vector{Rational{Int}}
-    initial_rhs::Vector{Rational{Int}}
-    rhs::Vector{Rational{Int}}
-    objective_value::Rational{Int}
+    simplex_array::Matrix{Rational{BigInt}}
+    artificial_objective::Vector{Rational{BigInt}}
+    artificial_objective_value::Rational{BigInt}
+    initial_objective_coefficients::Vector{Rational{BigInt}}
+    reduced_and_dual_costs::Vector{Rational{BigInt}}
+    initial_rhs::Vector{Rational{BigInt}}
+    rhs::Vector{Rational{BigInt}}
+    objective_value::Rational{BigInt}
     basis_variables::Vector{Int}
     init_variables::Vector{Int}
     slack_variables::Vector{Int}
@@ -34,7 +34,7 @@ function get_objective_value(simplex::RationalSimplex)
     return simplex.objective_value
 end
 
-function set_objective_value!(simplex::RationalSimplex, value::Rational{Int})
+function set_objective_value!(simplex::RationalSimplex, value::Rational{BigInt})
     simplex.objective_value = value
     return simplex
 end
@@ -67,7 +67,7 @@ function get_initial_rhs_coefficient(simplex::RationalSimplex, i::Int)
     return simplex.initial_rhs[i]
 end
 
-function set_objective_coefficient_value!(simplex::RationalSimplex, i::Int, value::Rational{Int})
+function set_objective_coefficient_value!(simplex::RationalSimplex, i::Int, value::Rational{BigInt})
     simplex.reduced_and_dual_costs[i] = value
     return simplex
 end
@@ -84,7 +84,7 @@ function get_rhs_coefficient(simplex::RationalSimplex, i::Int)
     return simplex.rhs[i]
 end
 
-function set_rhs_value!(simplex::RationalSimplex, i::Int, value::Rational{Int})
+function set_rhs_value!(simplex::RationalSimplex, i::Int, value::Rational{BigInt})
     simplex.rhs[i] = value
     return simplex
 end
@@ -102,12 +102,12 @@ function set_basis_variables!(simplex::RationalSimplex, i::Int, variable::Int)
     return simplex
 end
 
-function set_coefficient_array!(simplex::RationalSimplex, i::Int, j::Int, value::Rational{Int})
+function set_coefficient_array!(simplex::RationalSimplex, i::Int, j::Int, value::Rational{BigInt})
     simplex.simplex_array[i,j] = value
     return simplex
 end
 
-function set_artificial_objective_coefficient!(simplex::RationalSimplex, i::Int, value::Rational{Int})
+function set_artificial_objective_coefficient!(simplex::RationalSimplex, i::Int, value::Rational{BigInt})
     simplex.artificial_objective[i] = value
     return simplex
 end
@@ -121,7 +121,7 @@ function get_artificial_objective_value(simplex::RationalSimplex)
     return simplex.artificial_objective_value
 end
 
-function set_artificial_objective_value!(simplex::RationalSimplex, value::Rational{Int})
+function set_artificial_objective_value!(simplex::RationalSimplex, value::Rational{BigInt})
     simplex.artificial_objective_value = value
     return simplex
 end
@@ -202,14 +202,14 @@ function model2simplex(model::Model)
     end
 
     simplex = RationalSimplex(
-        zeros(Rational{Int}, nb_constraints, nb_variables),
-        zeros(Rational{Int}, nb_variables),
-        zero(Rational{Int}),
-        Vector{Rational{Int}}([rationalize(get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
-        Vector{Rational{Int}}([rationalize(get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
-        Vector{Rational{Int}}([normalized_rhs(con) for (con, S, _) in all_constraints_vec]),
-        Vector{Rational{Int}}([normalized_rhs(con) for (con, S, _) in all_constraints_vec]),
-        rationalize(-objective_function(model).constant),
+        zeros(Rational{BigInt}, nb_constraints, nb_variables),
+        zeros(Rational{BigInt}, nb_variables),
+        zero(Rational{BigInt}),
+        Vector{Rational{BigInt}}([rationalize(BigInt, get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
+        Vector{Rational{BigInt}}([rationalize(BigInt, get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
+        Vector{Rational{BigInt}}([normalized_rhs(con) for (con, S, _) in all_constraints_vec]),
+        Vector{Rational{BigInt}}([normalized_rhs(con) for (con, S, _) in all_constraints_vec]),
+        rationalize(BigInt, -objective_function(model).constant),
         basis_variables,
         init_variables,
         slack_variables,
@@ -222,11 +222,11 @@ function model2simplex(model::Model)
         con = all_constraints_vec[i][1]
         last_variable = 0
         for j in 1:nb_variables
-            set_coefficient_array!(simplex, i, j, rationalize(normalized_coefficient(con, all_variables_vec[j])))
+            set_coefficient_array!(simplex, i, j, rationalize(BigInt, normalized_coefficient(con, all_variables_vec[j])))
         end
     end
     for variable in artificial_variables
-        set_artificial_objective_coefficient!(simplex, variable, 1//1)
+        set_artificial_objective_coefficient!(simplex, variable, big(1)//1)
     end
 
     return simplex
@@ -379,7 +379,7 @@ function remove_artificials!(simplex::RationalSimplex)
     simplex.simplex_array = simplex.simplex_array[1:end, 1:(end-length(artificial_variables))]
     simplex.artificial_variables = Vector{Int}()
     simplex.artificial_objective = zeros(length(simplex.variable_names))
-    simplex.artificial_objective_value = zero(Rational{Int})
+    simplex.artificial_objective_value = zero(Rational{BigInt})
 
     return simplex
 end

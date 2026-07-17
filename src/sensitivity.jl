@@ -1,8 +1,8 @@
 mutable struct SensitivityIntervalVariables
     variable_names::Vector{String}
-    reduced_costs::Vector{Rational{Int}}
-    initial_objective_coefficients::Vector{Rational{Int}}
-    intervals::Vector{Tuple{Union{Nothing, Rational{Int}, Float64}, Union{Nothing, Rational{Int}, Float64}}}
+    reduced_costs::Vector{Rational{BigInt}}
+    initial_objective_coefficients::Vector{Rational{BigInt}}
+    intervals::Vector{Tuple{Union{Nothing, Rational{BigInt}, Float64}, Union{Nothing, Rational{BigInt}, Float64}}}
 end
 
 function get_initial_objective_coefficients(sensitivity_variables::SensitivityIntervalVariables)
@@ -37,7 +37,7 @@ function get_interval(sensitivity_variables::SensitivityIntervalVariables, var_i
     return sensitivity_variables.intervals[var_indice]
 end
 
-function set_interval!(sensitivity_variables::SensitivityIntervalVariables, var_indice::Int, interval::Tuple{Union{Rational{Int}, Float64}, Union{Rational{Int}, Float64}})
+function set_interval!(sensitivity_variables::SensitivityIntervalVariables, var_indice::Int, interval::Tuple{Union{Rational{BigInt}, Float64}, Union{Rational{BigInt}, Float64}})
     sensitivity_variables.intervals[var_indice] = interval
     return sensitivity_variables
 end
@@ -48,9 +48,9 @@ end
 
 
 mutable struct SensitivityIntervalConstraints
-    dual_costs::Vector{Rational{Int}}
-    initial_rhs_coefficients::Vector{Rational{Int}}
-    intervals::Vector{Tuple{Union{Nothing, Rational{Int}, Float64}, Union{Nothing, Rational{Int}, Float64}}}
+    dual_costs::Vector{Rational{BigInt}}
+    initial_rhs_coefficients::Vector{Rational{BigInt}}
+    intervals::Vector{Tuple{Union{Nothing, Rational{BigInt}, Float64}, Union{Nothing, Rational{BigInt}, Float64}}}
 end
 
 function get_initial_rhs_coefficients(sensitivity_constraints::SensitivityIntervalConstraints)
@@ -77,7 +77,7 @@ function get_interval(sensitivity_constraints::SensitivityIntervalConstraints, c
     return sensitivity_constraints.intervals[const_indice]
 end
 
-function set_interval!(sensitivity_constraints::SensitivityIntervalConstraints, const_indice::Int, interval::Tuple{Union{Rational{Int}, Float64}, Union{Rational{Int}, Float64}})
+function set_interval!(sensitivity_constraints::SensitivityIntervalConstraints, const_indice::Int, interval::Tuple{Union{Rational{BigInt}, Float64}, Union{Rational{BigInt}, Float64}})
     sensitivity_constraints.intervals[const_indice] = interval
     return sensitivity_constraints
 end
@@ -118,8 +118,8 @@ function sensitivity_analysis(simplex::RationalSimplex, filename::String)
         constraint_ind = get_constraint_for_variable(simplex, i)
         delta_has_lower_bound = false
         delta_has_upper_bound = false
-        delta_lower_bound = 0//1
-        delta_upper_bound = 0//1
+        delta_lower_bound = big(0)//1
+        delta_upper_bound = big(0)//1
         if constraint_ind != 0
             first_eq_done = false
             tex_str *= "\\begin{align*}\n"
@@ -186,8 +186,8 @@ function sensitivity_analysis(simplex::RationalSimplex, filename::String)
         tex_str *= "Compute sensitivity interval for constraint \$\\left($j\\right)\$\n"
         delta_has_lower_bound = false
         delta_has_upper_bound = false
-        delta_lower_bound = 0//1
-        delta_upper_bound = 0//1
+        delta_lower_bound = big(0)//1
+        delta_upper_bound = big(0)//1
         first_eq_done = false
         tex_str *= "\\begin{align*}\n"
         for k in 1:nb_constraints

@@ -108,7 +108,7 @@ function model2latex(model::Model)
 end
 
 
-function rational2tex(x::Rational{Int}; in_math=false)
+function rational2tex(x::Rational{BigInt}; in_math=false)
     return "$(!in_math ? "\$" : "")$(denominator(x) != 1 ? "$(sign(numerator(x)) == -1 ? "-" : "")\\frac{$(abs(numerator(x)))}{$(denominator(x))}" : numerator(x))$(!in_math ? "\$" : "")"
 end
 
