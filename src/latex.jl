@@ -2,16 +2,7 @@ using JuMP
 
 
 function model2latex(model::Model)
-    all_constraints_vec = Vector{Tuple{Any, Any, Int}}()
-    for (F, S) in list_of_constraint_types(model)
-        if F == VariableRef
-            continue
-        end
-        for con in all_constraints(model, F, S)
-            push!(all_constraints_vec, (con, S, con.index.value))
-        end
-    end
-    sort!(all_constraints_vec, by=x->x[3])
+    all_constraints_vec = list_constraints(model)
 
     init_all_variables_vec = all_variables(model)
     all_variables_vec = Vector{VariableRef}()

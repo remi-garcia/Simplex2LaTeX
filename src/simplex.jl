@@ -142,16 +142,7 @@ end
 
 function model2simplex(model::Model)
     init_all_variables_vec = all_variables(model)
-    all_constraints_vec = Vector{Tuple{Any, Any, Int}}()
-    for (F, S) in list_of_constraint_types(model)
-        if F == VariableRef
-            continue
-        end
-        for con in all_constraints(model, F, S)
-            push!(all_constraints_vec, (con, S, con.index.value))
-        end
-    end
-    sort!(all_constraints_vec, by=x->x[3])
+    all_constraints_vec = list_constraints(model)
 
     nb_constraints = length(all_constraints_vec)
     all_variables_vec = Vector{VariableRef}()
@@ -394,13 +385,7 @@ function solve_with_simplex(init_model::Model, filename::String)
         variable = all_variables(model)[i]
         model[:var_names][variable] = "x_{$i}"
     end
-    nb_constraints = 0
-    for (F, S) in list_of_constraint_types(model)
-        if F == VariableRef
-            continue
-        end
-        nb_constraints += length(all_constraints(model, F, S))
-    end
+    nb_constraints = length(list_constraints(model))
 
     tex_str = ""
     tex_str *= "\n\n\\section*{Solving model with simplex}\n"
@@ -415,14 +400,9 @@ function solve_with_simplex(init_model::Model, filename::String)
     end
 
     rhsneg = false
-    for (F, S) in list_of_constraint_types(model)
-        if F == VariableRef
-            continue
-        end
-        for con in all_constraints(model, F, S)
-            if normalized_rhs(con) < 0
-                rhsneg = true
-            end
+    for (con, S, _) in list_constraints(model)
+        if normalized_rhs(con) < 0
+            rhsneg = true
         end
     end
 
