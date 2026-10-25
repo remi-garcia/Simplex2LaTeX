@@ -170,7 +170,14 @@ function sensitivity_analysis(simplex::RationalSimplex, filename::String)
     tex_str *= "Sensitivity intervals for the constraints:\n"
     initial_rhs = get_initial_rhs_coefficients(simplex)
     nb_constraints = length(initial_rhs)
-    dual_costs = -get_objective_coefficients(simplex)[(nb_variables+1):(nb_variables+nb_constraints)]
+    Binv = inverse_basis(simplex)
+    basis = get_basis_variables(simplex)
+    dual_costs = zeros(Rational{BigInt}, nb_constraints)
+    for j in 1:nb_constraints
+        for k in 1:nb_constraints
+            dual_costs[j] += get_initial_objective_coefficient(simplex, basis[k]) * Binv[k, j]
+        end
+    end
     sen_intervals = Vector{Tuple{Union{Nothing, Int, Float64}, Union{Nothing, Int, Float64}}}(undef, nb_constraints)
     for j in 1:nb_constraints
         sen_intervals[j] = (nothing, nothing)
@@ -191,7 +198,7 @@ function sensitivity_analysis(simplex::RationalSimplex, filename::String)
         first_eq_done = false
         tex_str *= "\\begin{align*}\n"
         for k in 1:nb_constraints
-            var_a = get_array(simplex)[k, nb_variables+j]
+            var_a = Binv[k, j]
             if var_a != 0
                 if first_eq_done
                     tex_str *= " \\\\\n"
@@ -199,12 +206,12 @@ function sensitivity_analysis(simplex::RationalSimplex, filename::String)
                     first_eq_done = true
                 end
                 var_b = get_rhs_coefficient(simplex, k)
-                tex_str *= "& $(rational2tex(var_b, in_math=true)) $(var_a < 0 ? "+" : "-") $(abs(var_a) != 1 ? rational2tex(abs(var_a), in_math=true) : "") \\Delta_{\\left($(j)\\right)} \\geq 0"
-                if var_a < 0
+                tex_str *= "& $(rational2tex(var_b, in_math=true)) $(var_a < 0 ? "-" : "+") $(abs(var_a) != 1 ? rational2tex(abs(var_a), in_math=true) : "") \\Delta_{\\left($(j)\\right)} \\geq 0"
+                if var_a > 0
                     if delta_has_lower_bound
-                        delta_lower_bound = max(delta_lower_bound, -var_b//abs(var_a))
+                        delta_lower_bound = max(delta_lower_bound, -var_b//var_a)
                     else
-                        delta_lower_bound = -var_b//abs(var_a)
+                        delta_lower_bound = -var_b//var_a
                         delta_has_lower_bound = true
                     end
                 else

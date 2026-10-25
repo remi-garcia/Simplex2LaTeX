@@ -3,6 +3,7 @@ using JuMP
 
 mutable struct RationalSimplex
     simplex_array::Matrix{Rational{BigInt}}
+    initial_array::Matrix{Rational{BigInt}}
     artificial_objective::Vector{Rational{BigInt}}
     artificial_objective_value::Rational{BigInt}
     initial_objective_coefficients::Vector{Rational{BigInt}}
@@ -28,6 +29,14 @@ end
 
 function get_array(simplex::RationalSimplex)
     return simplex.simplex_array
+end
+
+function get_initial_array(simplex::RationalSimplex)
+    return simplex.initial_array
+end
+
+function inverse_basis(simplex::RationalSimplex)
+    return inv(get_initial_array(simplex)[:, get_basis_variables(simplex)])
 end
 
 function get_objective_value(simplex::RationalSimplex)
@@ -194,6 +203,7 @@ function model2simplex(model::Model)
 
     simplex = RationalSimplex(
         zeros(Rational{BigInt}, nb_constraints, nb_variables),
+        zeros(Rational{BigInt}, nb_constraints, nb_variables),
         zeros(Rational{BigInt}, nb_variables),
         zero(Rational{BigInt}),
         Vector{Rational{BigInt}}([rationalize(BigInt, get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
@@ -216,6 +226,7 @@ function model2simplex(model::Model)
             set_coefficient_array!(simplex, i, j, rationalize(BigInt, normalized_coefficient(con, all_variables_vec[j])))
         end
     end
+    simplex.initial_array = copy(get_array(simplex))
     for variable in artificial_variables
         set_artificial_objective_coefficient!(simplex, variable, big(1)//1)
     end
