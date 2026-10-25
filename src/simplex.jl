@@ -149,9 +149,8 @@ function solved!(simplex::RationalSimplex)
 end
 
 
-function model2simplex(model::Model)
+function model2simplex(model::Model, all_constraints_vec)
     init_all_variables_vec = all_variables(model)
-    all_constraints_vec = list_constraints(model)
 
     nb_constraints = length(all_constraints_vec)
     all_variables_vec = Vector{VariableRef}()
@@ -163,7 +162,7 @@ function model2simplex(model::Model)
     for i in 1:length(init_all_variables_vec)
         variable = init_all_variables_vec[i]
         useless_variable = true
-        for (con, S, _) in all_constraints_vec
+        for (con, S) in all_constraints_vec
             if normalized_coefficient(con, variable) != 0
                 useless_variable = false
                 break
@@ -208,8 +207,8 @@ function model2simplex(model::Model)
         zero(Rational{BigInt}),
         Vector{Rational{BigInt}}([rationalize(BigInt, get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
         Vector{Rational{BigInt}}([rationalize(BigInt, get(objective_function(model).terms, variable, 0.0)) for variable in all_variables_vec]),
-        Vector{Rational{BigInt}}([rationalize(BigInt, normalized_rhs(con)) for (con, S, _) in all_constraints_vec]),
-        Vector{Rational{BigInt}}([rationalize(BigInt, normalized_rhs(con)) for (con, S, _) in all_constraints_vec]),
+        Vector{Rational{BigInt}}([rationalize(BigInt, normalized_rhs(con)) for (con, S) in all_constraints_vec]),
+        Vector{Rational{BigInt}}([rationalize(BigInt, normalized_rhs(con)) for (con, S) in all_constraints_vec]),
         rationalize(BigInt, -objective_function(model).constant),
         basis_variables,
         init_variables,
@@ -388,51 +387,70 @@ end
 
 
 
-function solve_with_simplex(init_model::Model, filename::String)
-    model = copy(init_model)
+function solve_with_simplex(init_model::Model, filename::String, constraint_order::Vector{<:ConstraintRef})
+    model, reference_map = copy_model(init_model)
     model[:var_names] = Dict{VariableRef, String}()
     nb_variables = length(all_variables(model))
     for i in 1:nb_variables
         variable = all_variables(model)[i]
         model[:var_names][variable] = "x_{$i}"
     end
-    nb_constraints = length(list_constraints(model))
+    if isempty(constraint_order)
+        all_constraints_vec = list_constraints(model)
+        if length(unique([S for (con, S) in all_constraints_vec])) > 1
+            @warn "The model mixes constraint senses: constraints are grouped by sense."
+        end
+    else
+        model_constraints = [con for (con, S) in list_constraints(init_model)]
+        if length(constraint_order) != length(model_constraints) || length(unique(constraint_order)) != length(constraint_order)
+            error("constraint_order must list each constraint of the model exactly once.")
+        end
+        for con in constraint_order
+            if !(con in model_constraints)
+                error("constraint_order must list each constraint of the model exactly once, $(con) is not one of them.")
+            end
+        end
+        all_constraints_vec = Vector{Tuple{Any, Any}}()
+        for con in constraint_order
+            push!(all_constraints_vec, (reference_map[con], typeof(constraint_object(con).set)))
+        end
+    end
 
     tex_str = ""
     tex_str *= "\n\n\\section*{Solving model with simplex}\n"
     tex_str *= "\n\\subsection*{Rewriting model}\n"
 
-    tex_str *= model2latex(model)
+    tex_str *= model2latex(model, all_constraints_vec)
 
     if objective_sense(model) == MOI.MIN_SENSE
         min2max!(model)
         tex_str *= "\n\nObjective function from \$\\min\$ to \$\\max\$\n\n"
-        tex_str *= model2latex(model)
+        tex_str *= model2latex(model, all_constraints_vec)
     end
 
     rhsneg = false
-    for (con, S, _) in list_constraints(model)
+    for (con, S) in all_constraints_vec
         if normalized_rhs(con) < 0
             rhsneg = true
         end
     end
 
     if rhsneg
-        rhs2pos!(model)
+        all_constraints_vec = rhs2pos!(model, all_constraints_vec)
         tex_str *= "\n\nPositive right hand sides\n\n"
-        tex_str *= model2latex(model)
+        tex_str *= model2latex(model, all_constraints_vec)
     end
 
     tex_str *= "\n\nAdd slack variables\n\n"
-    add_slack_variables!(model)
-    tex_str *= model2latex(model)
+    all_constraints_vec = add_slack_variables!(model, all_constraints_vec)
+    tex_str *= model2latex(model, all_constraints_vec)
 
     tex_str *= "\n\nAdd artificial variables\n\n"
-    add_artificial_variables!(model)
-    tex_str *= model2latex(model)
+    add_artificial_variables!(model, all_constraints_vec)
+    tex_str *= model2latex(model, all_constraints_vec)
 
     tex_str *= "\n\nModel to simplex table\n\n"
-    simplex = model2simplex(model)
+    simplex = model2simplex(model, all_constraints_vec)
     tex_str *= simplex2latex(simplex)
 
     tex_str *= "\n\n\\subsection*{Solving}\n"

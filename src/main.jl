@@ -6,7 +6,7 @@ include("sensitivity.jl")
 include("latex.jl")
 
 
-function main(model::Model, filename::String)
+function main(model::Model, filename::String, constraint_order::Vector{<:ConstraintRef}=ConstraintRef[])
     open(filename, "w") do f
         write(f, """
         \\documentclass[11pt]{article}
@@ -23,7 +23,7 @@ function main(model::Model, filename::String)
         """)
     end
 
-    simplex = solve_with_simplex(model, filename)
+    simplex = solve_with_simplex(model, filename, constraint_order)
     if is_solved(simplex)
         sensitivity_analysis(simplex, filename)
     end

@@ -2,16 +2,17 @@ using JuMP
 
 
 function list_constraints(model::Model)
-    all_constraints_vec = Vector{Tuple{Any, Any, Int}}()
+    all_constraints_vec = Vector{Tuple{Any, Any}}()
     for (F, S) in list_of_constraint_types(model)
         if F == VariableRef
             continue
         end
-        for con in all_constraints(model, F, S)
-            push!(all_constraints_vec, (con, S, con.index.value))
+        cons = all_constraints(model, F, S)
+        sort!(cons, by=con->con.index.value)
+        for con in cons
+            push!(all_constraints_vec, (con, S))
         end
     end
-    sort!(all_constraints_vec, by=x->x[3])
 
     return all_constraints_vec
 end
@@ -29,12 +30,11 @@ function min2max!(model::Model)
 end
 
 
-function rhs2pos!(model::Model)
+function rhs2pos!(model::Model, all_constraints_vec)
     all_constraints_rhs_vec = Vector{Bool}()
     all_variables_vec = all_variables(model)
-    all_constraints_vec = list_constraints(model)
 
-    for (con, S, _) in all_constraints_vec
+    for (con, S) in all_constraints_vec
         push!(all_constraints_rhs_vec, false)
         if normalized_rhs(con) < 0
             set_normalized_rhs(con, -normalized_rhs(con))
@@ -45,42 +45,44 @@ function rhs2pos!(model::Model)
         end
     end
 
-    if true in all_constraints_rhs_vec
-        for i in 1:length(all_constraints_vec)
-            con = all_constraints_vec[i][1]
-            S = all_constraints_vec[i][2]
-            c = [normalized_coefficient(con, variable) for variable in all_variables_vec]
-            rhs = normalized_rhs(con)
-            delete(model, con)
-            if S == MOI.LessThan{Float64}
-                if all_constraints_rhs_vec[i]
-                    @constraint(model, c' * all_variables_vec >= rhs)
-                else
-                    @constraint(model, c' * all_variables_vec <= rhs)
-                end
-            elseif S == MOI.GreaterThan{Float64}
-                if all_constraints_rhs_vec[i]
-                    @constraint(model, c' * all_variables_vec <= rhs)
-                else
-                    @constraint(model, c' * all_variables_vec >= rhs)
-                end
-            elseif S == MOI.EqualTo{Float64}
-                @constraint(model, c' * all_variables_vec == rhs)
-            else
-                error()
-            end
-        end
+    if !(true in all_constraints_rhs_vec)
+        return all_constraints_vec
     end
 
-    return model
+    new_constraints_vec = Vector{Tuple{Any, Any}}()
+    for i in 1:length(all_constraints_vec)
+        con = all_constraints_vec[i][1]
+        S = all_constraints_vec[i][2]
+        c = [normalized_coefficient(con, variable) for variable in all_variables_vec]
+        rhs = normalized_rhs(con)
+        delete(model, con)
+        if S == MOI.LessThan{Float64}
+            if all_constraints_rhs_vec[i]
+                con = @constraint(model, c' * all_variables_vec >= rhs)
+            else
+                con = @constraint(model, c' * all_variables_vec <= rhs)
+            end
+        elseif S == MOI.GreaterThan{Float64}
+            if all_constraints_rhs_vec[i]
+                con = @constraint(model, c' * all_variables_vec <= rhs)
+            else
+                con = @constraint(model, c' * all_variables_vec >= rhs)
+            end
+        elseif S == MOI.EqualTo{Float64}
+            con = @constraint(model, c' * all_variables_vec == rhs)
+        else
+            error()
+        end
+        push!(new_constraints_vec, (con, typeof(constraint_object(con).set)))
+    end
+
+    return new_constraints_vec
 end
 
 
-function add_slack_variables!(model::Model)
-    all_constraints_vec = list_constraints(model)
-
+function add_slack_variables!(model::Model, all_constraints_vec)
     i = 1
-    for (con, S, _) in all_constraints_vec
+    for (con, S) in all_constraints_vec
         if S == MOI.LessThan{Float64}
             x = @variable(model, lower_bound=0.0)
             model[:var_names][x] = "\\textcolor{blue}{e_{$i}}"
@@ -99,22 +101,23 @@ function add_slack_variables!(model::Model)
     end
 
     all_variables_vec = all_variables(model)
+    new_constraints_vec = Vector{Tuple{Any, Any}}()
     for i in 1:length(all_constraints_vec)
         con = all_constraints_vec[i][1]
         c = [normalized_coefficient(con, variable) for variable in all_variables_vec]
         rhs = normalized_rhs(con)
         delete(model, con)
-        @constraint(model, c' * all_variables_vec == rhs)
+        con = @constraint(model, c' * all_variables_vec == rhs)
+        push!(new_constraints_vec, (con, MOI.EqualTo{Float64}))
     end
 
-    return model
+    return new_constraints_vec
 end
 
 
 
-function add_artificial_variables!(model::Model)
+function add_artificial_variables!(model::Model, all_constraints_vec)
     all_variables_vec = all_variables(model)
-    all_constraints_vec = list_constraints(model)
 
     nb_constraints = length(all_constraints_vec)
     for i in 1:nb_constraints

@@ -1,9 +1,7 @@
 using JuMP
 
 
-function model2latex(model::Model)
-    all_constraints_vec = list_constraints(model)
-
+function model2latex(model::Model, all_constraints_vec)
     init_all_variables_vec = all_variables(model)
     all_variables_vec = Vector{VariableRef}()
 
@@ -12,7 +10,7 @@ function model2latex(model::Model)
             push!(all_variables_vec, variable)
             continue
         end
-        for (con, S, _) in all_constraints_vec
+        for (con, S) in all_constraints_vec
             if normalized_coefficient(con, variable) != 0.0
                 push!(all_variables_vec, variable)
                 break
@@ -53,7 +51,7 @@ function model2latex(model::Model)
     tex_str *= "& \\\\\n"
 
     firstcst = true
-    for (con, S, _) in all_constraints_vec
+    for (con, S) in all_constraints_vec
         tex_str *= "& "
         if firstcst
             firstcst = false
